@@ -870,33 +870,8 @@
             // Update logic display
             setLogic(solveData.logic);
 
-            let finalCode = solveData.python_code;
-
-            // Step 4: Translate if C++ selected
-            if (selectedLang === 'cpp') {
-                btn.textContent = '🔄 Translating...';
-                log('Translating to C++...', 'info');
-                try {
-                    const transResp = await fetch(`${BACKEND_URL}/translate`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ python_code: solveData.python_code }),
-                        signal: AbortSignal.timeout(30000),
-                    });
-
-                    if (transResp.ok) {
-                        const transData = await transResp.json();
-                        finalCode = transData.cpp_code;
-                        log('C++ translation complete ✅', 'success');
-                    } else {
-                        log('C++ translation failed — injecting Python', 'warn');
-                    }
-                } catch (transErr) {
-                    log(`Translation error: ${transErr.message} — injecting Python`, 'warn');
-                }
-            } else {
-                log('Using Python (no translation needed)', 'info');
-            }
+            let finalCode = solveData.cpp_code;
+            log('C++ code ready ✅', 'success');
 
             // Step 5: Inject into Monaco editor
             injectCode(finalCode);

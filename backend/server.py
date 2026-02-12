@@ -1,6 +1,7 @@
 """
-RC-Oracle Backend — Hybrid Symbolic-Neural Solver
-FastAPI server with Data Factory, Symbolic Heuristics, OpenAI Agentic Loop, and C++ Translation.
+RC-Oracle Backend — Industry-Grade C++ Solver
+FastAPI server with Data Factory, Symbolic Heuristics, and Groq Agentic Loop.
+Generates C++ code natively — no translation step.
 """
 
 import os
@@ -10,6 +11,8 @@ import json
 import math
 import base64
 import subprocess
+import tempfile
+import shutil
 import traceback
 from pathlib import Path
 from typing import Optional
@@ -60,9 +63,6 @@ class IOPair(BaseModel):
 
 class SolveRequest(BaseModel):
     pairs: list[IOPair]
-
-class TranslateRequest(BaseModel):
-    python_code: str
 
 # ─── Synthetic Input Generator ──────────────────────────────────────────────
 # Competitive programming problems typically expect:
@@ -185,6 +185,26 @@ def probe_executable(exe_path: str, custom_inputs: Optional[list[str]] = None) -
 
 # ─── Symbolic Heuristics Engine ──────────────────────────────────────────────
 
+CPP_TEMPLATE = '''#include <bits/stdc++.h>
+using namespace std;
+
+void solve() {{
+{body}
+}}
+
+int main() {{
+    ios_base::sync_with_stdio(false);
+    cin.tie(NULL);
+    solve();
+    return 0;
+}}
+'''
+
+def make_cpp(body: str) -> str:
+    """Wrap a solve() body in the standard C++ template."""
+    return CPP_TEMPLATE.format(body=body)
+
+
 def try_numeric_pairs(pairs: list[dict]) -> Optional[dict]:
     """Check if all I/O pairs can be explained by a numeric transformation."""
     numeric_pairs = []
@@ -201,18 +221,15 @@ def try_numeric_pairs(pairs: list[dict]) -> Optional[dict]:
 
     # Identity: y == x
     if all(y == x for x, y in numeric_pairs):
-        return {"type": "identity", "logic": "y = x", "code": "def solve(s):\n    return s"}
+        return {"type": "identity", "logic": "y = x",
+            "code": make_cpp('    long long x; cin >> x; cout << x << endl;')}
 
     # Constant: all outputs the same
     outputs = [y for _, y in numeric_pairs]
     if len(set(outputs)) == 1:
-        c = outputs[0]
-        c_repr = int(c) if c == int(c) else c
-        return {
-            "type": "constant",
-            "logic": f"y = {c_repr}",
-            "code": f"def solve(s):\n    return str({c_repr})",
-        }
+        c = int(outputs[0]) if outputs[0] == int(outputs[0]) else outputs[0]
+        return {"type": "constant", "logic": f"y = {c}",
+            "code": make_cpp(f'    cout << {c} << endl;')}
 
     # Linear: y = a*x + b
     if len(numeric_pairs) >= 2:
@@ -222,170 +239,84 @@ def try_numeric_pairs(pairs: list[dict]) -> Optional[dict]:
             a = (y2 - y1) / (x2 - x1)
             b = y1 - a * x1
             if all(abs(a * x + b - y) < 1e-9 for x, y in numeric_pairs):
-                a_repr = int(a) if a == int(a) else a
-                b_repr = int(b) if b == int(b) else b
-                if b_repr == 0:
-                    logic = f"y = {a_repr} * x"
-                    code = f"def solve(s):\n    return str(int(float(s)) * {a_repr})"
-                elif a_repr == 1:
-                    logic = f"y = x + {b_repr}"
-                    code = f"def solve(s):\n    return str(int(float(s)) + {b_repr})"
+                a_int = int(a) if a == int(a) else a
+                b_int = int(b) if b == int(b) else b
+                if b_int == 0:
+                    logic = f"y = {a_int} * x"
+                    body = f'    long long x; cin >> x; cout << x * {a_int} << endl;'
+                elif a_int == 1:
+                    logic = f"y = x + {b_int}"
+                    body = f'    long long x; cin >> x; cout << x + {b_int} << endl;'
                 else:
-                    sign = "+" if b_repr >= 0 else "-"
-                    logic = f"y = {a_repr} * x {sign} {abs(b_repr)}"
-                    code = f"def solve(s):\n    return str(int(float(s) * {a_repr} + {b_repr}))"
-                return {"type": "linear", "logic": logic, "code": code}
+                    sign = "+" if b_int >= 0 else "-"
+                    logic = f"y = {a_int} * x {sign} {abs(b_int)}"
+                    body = f'    long long x; cin >> x; cout << x * {a_int} + {b_int} << endl;'
+                return {"type": "linear", "logic": logic, "code": make_cpp(body)}
 
     # Quadratic: y = x^2
     if all(y == x * x for x, y in numeric_pairs):
-        return {
-            "type": "quadratic",
-            "logic": "y = x²",
-            "code": "def solve(s):\n    return str(int(float(s)) ** 2)",
-        }
+        return {"type": "quadratic", "logic": "y = x²",
+            "code": make_cpp('    long long x; cin >> x; cout << x * x << endl;')}
 
     # Power of 2: y = 2^x
     if all(x >= 0 and y == 2**x for x, y in numeric_pairs):
-        return {
-            "type": "power_of_2",
-            "logic": "y = 2^x",
-            "code": "def solve(s):\n    return str(2 ** int(float(s)))",
-        }
+        return {"type": "power_of_2", "logic": "y = 2^x",
+            "code": make_cpp('    long long x; cin >> x; cout << (1LL << x) << endl;')}
 
     # Factorial
     def factorial_match(x, y):
-        if x < 0 or x != int(x):
-            return False
+        if x < 0 or x != int(x): return False
         return y == math.factorial(int(x))
 
     if all(x >= 0 for x, _ in numeric_pairs) and all(factorial_match(x, y) for x, y in numeric_pairs):
-        return {
-            "type": "factorial",
-            "logic": "y = x!",
-            "code": "import math\ndef solve(s):\n    return str(math.factorial(int(s)))",
-        }
+        return {"type": "factorial", "logic": "y = x!",
+            "code": make_cpp('    long long x; cin >> x;\n    long long f = 1;\n    for (int i = 2; i <= x; i++) f *= i;\n    cout << f << endl;')}
 
     # Absolute value
     if all(y == abs(x) for x, y in numeric_pairs):
-        return {
-            "type": "absolute",
-            "logic": "y = |x|",
-            "code": "def solve(s):\n    return str(abs(int(float(s))))",
-        }
+        return {"type": "absolute", "logic": "y = |x|",
+            "code": make_cpp('    long long x; cin >> x; cout << abs(x) << endl;')}
 
     return None
 
 
 def try_string_transforms(pairs: list[dict]) -> Optional[dict]:
-    """Check for common string transformations."""
+    """Check for common string transformations. All output C++ code."""
     if not pairs:
         return None
 
     # Reverse
     if all(p["output"] == p["input"][::-1] for p in pairs):
-        return {
-            "type": "reverse",
-            "logic": "reverse the string",
-            "code": "def solve(s):\n    return s[::-1]",
-        }
+        return {"type": "reverse", "logic": "reverse the string",
+            "code": make_cpp('    string s; cin >> s;\n    reverse(s.begin(), s.end());\n    cout << s << endl;')}
 
     # Uppercase
     if all(p["output"] == p["input"].upper() for p in pairs):
-        return {
-            "type": "upper",
-            "logic": "convert to UPPERCASE",
-            "code": "def solve(s):\n    return s.upper()",
-        }
+        return {"type": "upper", "logic": "convert to UPPERCASE",
+            "code": make_cpp('    string s; cin >> s;\n    transform(s.begin(), s.end(), s.begin(), ::toupper);\n    cout << s << endl;')}
 
     # Lowercase
     if all(p["output"] == p["input"].lower() for p in pairs):
-        return {
-            "type": "lower",
-            "logic": "convert to lowercase",
-            "code": "def solve(s):\n    return s.lower()",
-        }
-
-    # Title case
-    if all(p["output"] == p["input"].title() for p in pairs):
-        return {
-            "type": "title",
-            "logic": "convert to Title Case",
-            "code": "def solve(s):\n    return s.title()",
-        }
-
-    # Strip whitespace — only match if there's an actual whitespace difference
-    if (all(p["output"] == p["input"].strip() for p in pairs) and
-            any(p["output"] != p["input"] for p in pairs)):
-        return {
-            "type": "strip",
-            "logic": "strip leading/trailing whitespace",
-            "code": "def solve(s):\n    return s.strip()",
-        }
+        return {"type": "lower", "logic": "convert to lowercase",
+            "code": make_cpp('    string s; cin >> s;\n    transform(s.begin(), s.end(), s.begin(), ::tolower);\n    cout << s << endl;')}
 
     # String length
     if all(p["output"] == str(len(p["input"])) for p in pairs):
-        return {
-            "type": "length",
-            "logic": "y = length of input string",
-            "code": "def solve(s):\n    return str(len(s))",
-        }
+        return {"type": "length", "logic": "y = length of input string",
+            "code": make_cpp('    string s; cin >> s;\n    cout << s.size() << endl;')}
 
     # Sort characters
     if all(p["output"] == "".join(sorted(p["input"])) for p in pairs):
-        return {
-            "type": "sort_chars",
-            "logic": "sort characters alphabetically",
-            "code": 'def solve(s):\n    return "".join(sorted(s))',
-        }
-
-    # Word count
-    if all(p["output"] == str(len(p["input"].split())) for p in pairs if p["input"].strip()):
-        return {
-            "type": "word_count",
-            "logic": "y = number of words",
-            "code": "def solve(s):\n    return str(len(s.split()))",
-        }
+        return {"type": "sort_chars", "logic": "sort characters alphabetically",
+            "code": make_cpp('    string s; cin >> s;\n    sort(s.begin(), s.end());\n    cout << s << endl;')}
 
     return None
 
 
 def try_encoding_transforms(pairs: list[dict]) -> Optional[dict]:
-    """Check for Base64, Hex, Caesar cipher."""
+    """Check for Caesar cipher. All output C++ code."""
     if not pairs or not all(p["input"] for p in pairs):
         return None
-
-    # Base64 encode
-    try:
-        if all(p["output"] == base64.b64encode(p["input"].encode()).decode() for p in pairs):
-            return {
-                "type": "base64_encode",
-                "logic": "Base64 encode",
-                "code": "import base64\ndef solve(s):\n    return base64.b64encode(s.encode()).decode()",
-            }
-    except Exception:
-        pass
-
-    # Base64 decode
-    try:
-        if all(p["output"] == base64.b64decode(p["input"].encode()).decode() for p in pairs):
-            return {
-                "type": "base64_decode",
-                "logic": "Base64 decode",
-                "code": "import base64\ndef solve(s):\n    return base64.b64decode(s.encode()).decode()",
-            }
-    except Exception:
-        pass
-
-    # Hex encode
-    try:
-        if all(p["output"] == p["input"].encode().hex() for p in pairs):
-            return {
-                "type": "hex_encode",
-                "logic": "Hex encode",
-                "code": "def solve(s):\n    return s.encode().hex()",
-            }
-    except Exception:
-        pass
 
     # Caesar cipher (try shifts 1-25)
     def caesar(text, shift):
@@ -400,21 +331,16 @@ def try_encoding_transforms(pairs: list[dict]) -> Optional[dict]:
 
     for shift in range(1, 26):
         if all(p["output"] == caesar(p["input"], shift) for p in pairs):
-            return {
-                "type": "caesar",
-                "logic": f"Caesar cipher (shift {shift})",
-                "code": (
-                    f"def solve(s):\n"
-                    f"    result = []\n"
-                    f"    for c in s:\n"
-                    f"        if c.isalpha():\n"
-                    f"            base = ord('A') if c.isupper() else ord('a')\n"
-                    f"            result.append(chr((ord(c) - base + {shift}) % 26 + base))\n"
-                    f"        else:\n"
-                    f"            result.append(c)\n"
-                    f"    return ''.join(result)"
-                ),
-            }
+            body = f'''    string s; cin >> s;
+    for (auto &c : s) {{
+        if (isalpha(c)) {{
+            char base = isupper(c) ? 'A' : 'a';
+            c = (c - base + {shift}) % 26 + base;
+        }}
+    }}
+    cout << s << endl;'''
+            return {"type": "caesar", "logic": f"Caesar cipher (shift {shift})",
+                "code": make_cpp(body)}
 
     return None
 
@@ -436,138 +362,202 @@ def symbolic_solve(pairs: list[dict]) -> Optional[dict]:
     return None
 
 
-# ─── Groq Agentic Synthesis — Code-Run-Verify Loop ────────────────────────
+# ─── Groq Agentic Synthesis — C++ Native Code-Compile-Verify Loop ─────────
 
-SYSTEM_PROMPT = """You are an expert competitive programmer. You are given input-output pairs from a black-box function.
-Your task is to analyze the pattern and write a Python function `def solve(s):` that takes the FULL raw input as a single string `s` and returns the expected output as a string.
+# Check for g++ compiler
+GPP_PATH = shutil.which("g++")
+if GPP_PATH:
+    print(f"✅ g++ found: {GPP_PATH}")
+else:
+    print("⚠ g++ not found — C++ verification will be disabled")
 
-IMPORTANT — Competitive Programming Format:
-- The input `s` is often MULTI-LINE. For example:
-  - First line might be N (count), second line might be N space-separated numbers.
-  - Or it might be just a single number.
-- You should parse the input string accordingly (split lines, split by spaces, convert to int, etc.).
-- Always return the result as a string.
+SYSTEM_PROMPT = """You are an elite competitive programmer who writes ONLY C++ code.
+You are given input-output pairs from a black-box function.
+Your task is to analyze the pattern and write a COMPLETE C++ program that reads from stdin and writes to stdout.
 
-Common patterns to consider:
-- Arithmetic: sums, products, differences, averages, min/max
-- Number theory: primes, GCD, LCM, modular arithmetic
-- Bit manipulation: XOR, AND, OR, bit reversal, popcount, binary representation
-- String operations: reversal, sorting, counting, encoding
+MANDATORY STRUCTURE:
+```cpp
+#include <bits/stdc++.h>
+using namespace std;
+
+void solve() {
+    // Read from cin, compute, write to cout
+}
+
+int main() {
+    ios_base::sync_with_stdio(false);
+    cin.tie(NULL);
+    solve();
+    return 0;
+}
+```
+
+CRITICAL RULES:
+1. Write ONLY C++ code. NEVER write Python. NEVER use def. NEVER use print().
+2. Use #include <bits/stdc++.h> and using namespace std;
+3. The solve() function must be void — read from cin, write to cout.
+4. Use `long long` for integers to avoid overflow.
+5. Output ONLY the complete C++ code. No explanations, no markdown fences outside the code.
+6. Handle edge cases: negative numbers, zero, single values, large values.
+7. Use `endl` or `"\n"` to end output lines.
+
+INPUT FORMAT HANDLING:
+- Single integer: `long long n; cin >> n;`
+- N then N numbers: `int n; cin >> n; vector<long long> a(n); for(auto &x : a) cin >> x;`
+- Space-separated: read until EOF or known count.
+- Multi-line: use getline() or multiple cin >>.
+- Strings: `string s; cin >> s;` or `getline(cin, s);`
+
+COMMON COMPETITIVE PROGRAMMING PATTERNS:
+- Arithmetic: sums, products, averages, min/max
+- Number theory: primes, GCD, LCM, modular arithmetic, divisors
+- Bit manipulation: XOR, AND, OR, bit reversal, popcount, __builtin_popcount()
+- Binary representation: converting to/from binary
+- String operations: reversal, sorting, substring, counting
 - Array operations: sorting, prefix sums, cumulative operations
-- Mathematical formulas: polynomials, sequences, combinatorics
-- Think about what happens to the BINARY representation of numbers
+- Math formulas: polynomials, sequences, combinatorics, Fibonacci
+- Digit operations: digit sum, digit count, digit reversal
 
-Rules:
-1. Your function MUST be named `solve` and take exactly one string argument `s`.
-2. Your function MUST return a string.
-3. Output ONLY the Python function code. No explanations, no markdown fences, no extra text.
-4. Parse the input by splitting lines and values as needed.
-5. Handle edge cases (empty string, negative numbers, single values, etc.).
-6. Think step-by-step about what mathematical or algorithmic pattern maps each input to its output.
-7. If one approach fails, try a COMPLETELY DIFFERENT approach — don't just tweak numbers.
+REMEMBER: You are a C++ ONLY programmer. Never output any other language.
 """
 
-def extract_solve_function(response_text: str) -> str:
-    """Extract the solve() function from the AI response."""
-    # Try to find code between markdown fences first
-    fence_match = re.search(r"```(?:python)?\s*\n(.*?)```", response_text, re.DOTALL)
+def extract_cpp_code(response_text: str) -> str:
+    """Extract C++ code from the AI response."""
+    # Try markdown fences first
+    fence_match = re.search(r"```(?:cpp|c\+\+)?\s*\n(.*?)```", response_text, re.DOTALL)
     if fence_match:
         code = fence_match.group(1).strip()
     else:
         code = response_text.strip()
 
-    # Ensure it contains def solve
-    if "def solve" not in code:
-        raise ValueError("Response does not contain a solve() function")
+    # Validate it's actually C++
+    if "def solve" in code or "def " in code:
+        raise ValueError("AI returned Python instead of C++")
+    if "#include" not in code and "int main" not in code:
+        raise ValueError("Response does not contain valid C++ code")
 
-    # Extract from first import or def to end
+    # Clean up: remove any text before #include
     lines = code.split("\n")
     start_idx = 0
     for i, line in enumerate(lines):
-        if line.strip().startswith("import ") or line.strip().startswith("from ") or line.strip().startswith("def solve"):
+        if line.strip().startswith("#include") or line.strip().startswith("using "):
             start_idx = i
             break
     code = "\n".join(lines[start_idx:])
     return code
 
 
-def execute_solve(code: str, test_input: str) -> str:
-    """Execute the solve() function in a sandbox and return its output."""
-    namespace = {}
-    exec(code, namespace)
-    solve_fn = namespace.get("solve")
-    if solve_fn is None:
-        raise ValueError("No solve() function defined in the generated code")
-    result = solve_fn(test_input)
-    return str(result)
+def compile_cpp(code: str) -> tuple[Optional[str], Optional[str]]:
+    """Compile C++ code with g++. Returns (exe_path, error_msg)."""
+    if not GPP_PATH:
+        return None, "g++ not found"
+
+    tmpdir = tempfile.mkdtemp(prefix="rc_oracle_")
+    src_path = os.path.join(tmpdir, "solution.cpp")
+    exe_path = os.path.join(tmpdir, "solution.exe" if sys.platform == "win32" else "solution")
+
+    with open(src_path, "w", encoding="utf-8") as f:
+        f.write(code)
+
+    try:
+        result = subprocess.run(
+            [GPP_PATH, "-O2", "-std=c++17", "-o", exe_path, src_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            return None, result.stderr.strip()
+        return exe_path, None
+    except subprocess.TimeoutExpired:
+        return None, "Compilation timed out"
+    except Exception as e:
+        return None, str(e)
 
 
-def verify_solution(code: str, pairs: list[dict]) -> tuple[bool, Optional[dict]]:
-    """Test the solve function against all I/O pairs. Whitespace-tolerant comparison."""
-    for p in pairs:
+def run_cpp(exe_path: str, test_input: str, timeout: float = 10.0) -> str:
+    """Run compiled C++ binary with input, return stdout."""
+    full_input = test_input if test_input.endswith("\n") else test_input + "\n"
+    result = subprocess.run(
+        [exe_path], input=full_input, capture_output=True, text=True, timeout=timeout,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Runtime error: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def verify_cpp_solution(code: str, pairs: list[dict]) -> tuple[bool, Optional[dict]]:
+    """Compile C++ code and test against all I/O pairs."""
+    exe_path, compile_err = compile_cpp(code)
+    if compile_err:
+        return False, {"input": "", "expected": "", "got": None, "error": f"Compile error: {compile_err}"}
+
+    try:
+        for p in pairs:
+            try:
+                got = run_cpp(exe_path, p["input"]).strip()
+                expected = p["output"].strip()
+                if got != expected:
+                    return False, {"input": p["input"], "expected": expected, "got": got, "error": None}
+            except Exception as e:
+                return False, {"input": p["input"], "expected": p["output"], "got": None, "error": str(e)}
+        return True, None
+    finally:
+        # Clean up temp directory
         try:
-            got = execute_solve(code, p["input"]).strip()
-            expected = p["output"].strip()
-            if got != expected:
-                return False, {
-                    "input": p["input"],
-                    "expected": expected,
-                    "got": got,
-                    "error": None,
-                }
-        except Exception as e:
-            return False, {
-                "input": p["input"],
-                "expected": p["output"],
-                "got": None,
-                "error": str(e),
-            }
-    return True, None
+            shutil.rmtree(os.path.dirname(exe_path), ignore_errors=True)
+        except Exception:
+            pass
 
 
-def score_solution(code: str, pairs: list[dict]) -> int:
-    """Count how many I/O pairs the code matches. Used to rank best-effort solutions."""
+def score_cpp_solution(code: str, pairs: list[dict]) -> int:
+    """Count how many I/O pairs the compiled C++ code matches."""
+    exe_path, compile_err = compile_cpp(code)
+    if compile_err:
+        return 0
+
     matched = 0
-    for p in pairs:
+    try:
+        for p in pairs:
+            try:
+                got = run_cpp(exe_path, p["input"]).strip()
+                if got == p["output"].strip():
+                    matched += 1
+            except Exception:
+                pass
+    finally:
         try:
-            got = execute_solve(code, p["input"]).strip()
-            if got == p["output"].strip():
-                matched += 1
+            shutil.rmtree(os.path.dirname(exe_path), ignore_errors=True)
         except Exception:
             pass
     return matched
 
 
 async def ai_solve(pairs: list[dict], max_retries: int = 20) -> dict:
-    """Agentic loop: ask AI, run code, verify, retry on failure.
+    """Agentic loop: ask AI for C++ code, compile, run, verify, retry on failure.
     Tracks the best-scoring attempt so even on total failure we return closest solution."""
     if not oai_client:
         raise HTTPException(status_code=503, detail="Groq API key not configured")
 
-    # Select best pairs for AI (limit to 15 for efficiency)
     ai_pairs = select_best_pairs(pairs, max_pairs=15)
 
     pair_text = "\n".join(f"  Input: {p['input']!r}  →  Output: {p['output']!r}" for p in ai_pairs)
     user_prompt = (
         f"Here are {len(ai_pairs)} input-output pairs from a black-box program:\n{pair_text}\n\n"
         f"Note: inputs may be multi-line (e.g., first line = N, second line = N numbers).\n"
-        f"Analyze the pattern carefully and write the solve(s) function."
+        f"Analyze the pattern carefully and write a COMPLETE C++ program.\n"
+        f"REMEMBER: C++ ONLY. Use #include <bits/stdc++.h>, void solve(), read cin, write cout."
     )
 
-    # Build conversation history for multi-turn retry
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
     ]
 
-    # Track the best attempt across all retries
     best_code = None
     best_score = -1
     best_attempt = 0
 
     for attempt in range(1, max_retries + 1):
         try:
-            # Increase temperature slightly on later attempts to explore different approaches
             temp = 0.2 if attempt <= 10 else 0.5
             response = oai_client.chat.completions.create(
                 model=MODEL_NAME,
@@ -576,59 +566,54 @@ async def ai_solve(pairs: list[dict], max_retries: int = 20) -> dict:
                 max_tokens=2048,
             )
             response_text = response.choices[0].message.content
-
-            # Add assistant response to history for multi-turn
             messages.append({"role": "assistant", "content": response_text})
 
-            code = extract_solve_function(response_text)
+            code = extract_cpp_code(response_text)
 
             # Score this attempt
-            score = score_solution(code, ai_pairs)
+            score = score_cpp_solution(code, ai_pairs)
             if score > best_score:
                 best_score = score
                 best_code = code
                 best_attempt = attempt
 
-            success, failure = verify_solution(code, ai_pairs)
+            success, failure = verify_cpp_solution(code, ai_pairs)
 
             if success:
-                return {
-                    "status": "solved",
-                    "code": code,
-                    "attempts": attempt,
-                }
+                return {"status": "solved", "code": code, "attempts": attempt}
 
             # Build retry prompt with failure info
             if failure["error"]:
                 retry_msg = (
-                    f"Your solution FAILED on attempt {attempt}.\n"
+                    f"Your C++ solution FAILED on attempt {attempt}.\n"
                     f"Input: {failure['input']!r}\n"
                     f"Expected: {failure['expected']!r}\n"
                     f"Error: {failure['error']}\n\n"
-                    f"Fix the solve(s) function. Output ONLY the corrected Python code."
+                    f"Fix the C++ code. Output ONLY the corrected COMPLETE C++ program.\n"
+                    f"DO NOT use Python. Use #include <bits/stdc++.h>, void solve(), cin/cout."
                 )
             else:
                 retry_msg = (
-                    f"Your solution FAILED on attempt {attempt}.\n"
+                    f"Your C++ solution FAILED on attempt {attempt}.\n"
                     f"Input: {failure['input']!r}\n"
                     f"Expected: {failure['expected']!r}\n"
                     f"Got: {failure['got']!r}\n\n"
-                    f"Fix the solve(s) function. Output ONLY the corrected Python code."
+                    f"Fix the C++ code. Output ONLY the corrected COMPLETE C++ program.\n"
+                    f"DO NOT use Python. Use #include <bits/stdc++.h>, void solve(), cin/cout."
                 )
             messages.append({"role": "user", "content": retry_msg})
 
-            # Reset conversation every 8 attempts to avoid context bloat
+            # Reset conversation every 8 attempts
             if attempt % 8 == 0 and attempt < max_retries:
                 messages = [
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt + f"\n\nPrevious {attempt} attempts all failed. Try a COMPLETELY DIFFERENT algorithm or approach."},
+                    {"role": "user", "content": user_prompt + f"\n\nPrevious {attempt} attempts all failed. Try a COMPLETELY DIFFERENT algorithm."},
                 ]
 
         except Exception as e:
-            error_msg = f"Error executing your code: {str(e)}\nPlease fix and output ONLY the corrected Python solve(s) function."
+            error_msg = f"Error with your C++ code: {str(e)}\nFix and output ONLY the corrected COMPLETE C++ program. NO PYTHON."
             messages.append({"role": "user", "content": error_msg})
 
-    # Return best-effort solution even if not perfect
     if best_code and best_score > 0:
         return {
             "status": "best_effort",
@@ -645,60 +630,7 @@ async def ai_solve(pairs: list[dict], max_retries: int = 20) -> dict:
     }
 
 
-# ─── C++ Translation ────────────────────────────────────────────────────────
-
-CPP_TRANSLATE_PROMPT = """You are an expert C++ competitive programmer. Translate the following Python `solve()` function into an equivalent C++ program.
-
-CRITICAL Requirements:
-1. The C++ code MUST use a `void solve()` function (NOT string, NOT int — VOID).
-2. Inside `void solve()`, read input from `cin` and write output to `cout`.
-3. Use `#include <bits/stdc++.h>` and `using namespace std;`.
-4. The `main()` function should simply call `solve()` and return 0.
-5. Do NOT use `string solve(string s)` — that is WRONG.
-6. Output ONLY the complete C++ code. No explanations.
-
-Example structure:
-```cpp
-#include <bits/stdc++.h>
-using namespace std;
-
-void solve() {{
-    // read from cin, compute, write to cout
-}}
-
-int main() {{
-    solve();
-    return 0;
-}}
-```
-
-Python code to translate:
-```python
-{python_code}
-```
-"""
-
-async def translate_to_cpp(python_code: str) -> str:
-    """Use GPT-4o-mini to translate Python solve() to C++."""
-    if not oai_client:
-        raise HTTPException(status_code=503, detail="Groq API key not configured")
-
-    prompt = CPP_TRANSLATE_PROMPT.format(python_code=python_code)
-    response = oai_client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[
-            {"role": "system", "content": "You are an expert C++ programmer. Output ONLY code."},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.1,
-        max_tokens=2048,
-    )
-
-    text = response.choices[0].message.content
-    fence_match = re.search(r"```(?:cpp|c\+\+)?\s*\n(.*?)```", text, re.DOTALL)
-    if fence_match:
-        return fence_match.group(1).strip()
-    return text.strip()
+# Translation step removed — AI generates C++ natively now.
 
 
 # ─── API Routes ──────────────────────────────────────────────────────────────
@@ -755,42 +687,41 @@ async def probe(req: ProbeRequest):
 @app.post("/solve")
 async def solve(req: SolveRequest):
     """
-    Solver Pipeline:
-      1. Symbolic Heuristics — instant pattern match
-      2. Groq Agentic Synthesis — Code-Run-Verify loop (max 5 retries)
+    Industry-Grade C++ Solver Pipeline:
+      1. Symbolic Heuristics — instant pattern match → C++ code
+      2. Groq AI — C++ native Code-Compile-Verify loop (20 retries)
     """
     pairs = [{"input": p.input, "output": p.output} for p in req.pairs]
 
     if len(pairs) < 1:
         raise HTTPException(status_code=400, detail="Need at least 1 I/O pair")
 
-    # Step 1: Symbolic Heuristics
+    # Step 1: Symbolic Heuristics (outputs C++ directly)
     heuristic_result = symbolic_solve(pairs)
     if heuristic_result:
-        # Verify heuristic solution against all pairs
-        success, _ = verify_solution(heuristic_result["code"], pairs)
+        success, _ = verify_cpp_solution(heuristic_result["code"], pairs)
         if success:
             return {
                 "method": "symbolic",
                 "logic": heuristic_result["logic"],
                 "type": heuristic_result["type"],
-                "python_code": heuristic_result["code"],
+                "cpp_code": heuristic_result["code"],
                 "attempts": 0,
             }
 
-    # Step 2: AI Agentic Synthesis (20 retries, best-effort fallback)
+    # Step 2: AI Agentic Synthesis — C++ native (20 retries, best-effort fallback)
     result = await ai_solve(pairs)
 
     if result["status"] in ("solved", "best_effort"):
-        # Derive plain-English logic from AI
+        # Derive logic description
         logic_desc = "AI-inferred logic"
         try:
             if oai_client:
                 logic_resp = oai_client.chat.completions.create(
                     model=MODEL_NAME,
                     messages=[
-                        {"role": "system", "content": "Describe code logic in one short sentence. Use math notation if helpful. Example: '(n * 2) + length'"},
-                        {"role": "user", "content": f"```python\n{result['code']}\n```"},
+                        {"role": "system", "content": "Describe code logic in one short sentence. Use math notation if helpful."},
+                        {"role": "user", "content": f"```cpp\n{result['code']}\n```"},
                     ],
                     temperature=0.1,
                     max_tokens=100,
@@ -805,7 +736,7 @@ async def solve(req: SolveRequest):
         return {
             "method": method,
             "logic": logic_desc + score_info,
-            "python_code": result["code"],
+            "cpp_code": result["code"],
             "attempts": result["attempts"],
         }
 
@@ -813,20 +744,6 @@ async def solve(req: SolveRequest):
         status_code=422,
         detail=f"Failed to find any working solution after {result['attempts']} attempts",
     )
-
-
-@app.post("/translate")
-async def translate(req: TranslateRequest):
-    """Translate verified Python solve() to C++."""
-    if not req.python_code.strip():
-        raise HTTPException(status_code=400, detail="No Python code provided")
-
-    cpp_code = await translate_to_cpp(req.python_code)
-
-    return {
-        "python_code": req.python_code,
-        "cpp_code": cpp_code,
-    }
 
 
 # ─── Entry Point ─────────────────────────────────────────────────────────────
