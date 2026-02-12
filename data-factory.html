@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RC-Oracle — Data Factory</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a12;
+            --surface: rgba(18, 18, 30, 0.9);
+            --glass: rgba(30, 30, 50, 0.5);
+            --border: rgba(100, 100, 180, 0.2);
+            --accent: #7c5cff;
+            --accent-glow: rgba(124, 92, 255, 0.35);
+            --success: #00e99e;
+            --error: #ff4a6e;
+            --warn: #ffb84d;
+            --text: #e8e6f0;
+            --dim: #6b6980;
+            --radius: 12px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Background grid */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(circle at 20% 50%, rgba(124, 92, 255, 0.06), transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(0, 233, 158, 0.04), transparent 50%),
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header .logo {
+            font-size: 40px;
+            margin-bottom: 8px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #7c5cff, #a78bfa, #c4b5fd);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 4px;
+        }
+
+        .header p {
+            color: var(--dim);
+            font-size: 14px;
+        }
+
+        /* Status Bar */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 10px 20px;
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 30px;
+            font-size: 13px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .status-dot.online {
+            background: var(--success);
+            box-shadow: 0 0 8px var(--success);
+        }
+
+        .status-dot.offline {
+            background: var(--error);
+            box-shadow: 0 0 8px var(--error);
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        /* Cards */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 24px;
+            backdrop-filter: blur(12px);
+        }
+
+        .card h2 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card h2 .icon {
+            font-size: 18px;
+        }
+
+        /* Form Elements */
+        label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--dim);
+            margin-bottom: 6px;
+        }
+
+        input[type="text"],
+        textarea {
+            width: 100%;
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus,
+        textarea:focus {
+            border-color: var(--accent);
+        }
+
+        input::placeholder,
+        textarea::placeholder {
+            color: var(--dim);
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.25s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #5a3fd4);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 24px var(--accent-glow);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .btn-secondary {
+            background: rgba(124, 92, 255, 0.12);
+            border: 1px solid var(--border);
+            color: var(--accent);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(124, 92, 255, 0.2);
+            border-color: var(--accent);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--success), #00c97e);
+            color: #0a0a12;
+        }
+
+        .btn-success:hover {
+            box-shadow: 0 4px 16px rgba(0, 233, 158, 0.3);
+        }
+
+        /* Row layouts */
+        .row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .row>* {
+            flex: 1;
+        }
+
+        /* Custom inputs area */
+        .custom-inputs-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .synthetic-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            background: rgba(124, 92, 255, 0.15);
+            border-radius: 4px;
+            font-size: 11px;
+            color: var(--accent);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Results Table */
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+
+        .results-table th {
+            text-align: left;
+            padding: 8px 12px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--dim);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .results-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid rgba(60, 60, 80, 0.2);
+        }
+
+        .results-table tr:hover td {
+            background: rgba(124, 92, 255, 0.05);
+        }
+
+        .pair-num {
+            color: var(--dim);
+            font-size: 11px;
+        }
+
+        /* Solution section */
+        .solution-box {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .solution-box pre {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: var(--success);
+        }
+
+        .logic-badge {
+            display: inline-block;
+            padding: 6px 14px;
+            background: rgba(0, 233, 158, 0.1);
+            border: 1px solid rgba(0, 233, 158, 0.3);
+            border-radius: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: var(--success);
+            margin-bottom: 16px;
+        }
+
+        .method-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .method-badge.symbolic {
+            background: rgba(0, 233, 158, 0.15);
+            color: var(--success);
+        }
+
+        .method-badge.openai {
+            background: rgba(124, 92, 255, 0.15);
+            color: var(--accent);
+        }
+
+        /* Log */
+        .log-area {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(60, 60, 80, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            max-height: 200px;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+
+        .log-area::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .log-area::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        .log-entry.success {
+            color: var(--success);
+        }
+
+        .log-entry.error {
+            color: var(--error);
+        }
+
+        .log-entry.warn {
+            color: var(--warn);
+        }
+
+        .log-entry.info {
+            color: var(--accent);
+        }
+
+        /* Copy button */
+        .copy-btn {
+            position: relative;
+            padding: 4px 10px;
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--dim);
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+
+        /* Sections hidden by default */
+        .hidden {
+            display: none !important;
+        }
+
+        /* File input override */
+        .file-drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 16px;
+        }
+
+        .file-drop-zone:hover,
+        .file-drop-zone.dragover {
+            border-color: var(--accent);
+            background: rgba(124, 92, 255, 0.05);
+        }
+
+        .file-drop-zone .icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .file-drop-zone p {
+            color: var(--dim);
+            font-size: 13px;
+        }
+
+        .file-drop-zone .filename {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        .file-drop-zone input {
+            display: none;
+        }
+
+        /* Footer */
+        .actions-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">🏭</div>
+            <h1>RC-Oracle Data Factory</h1>
+            <p>Upload a binary, probe it with synthetic inputs, solve the logic</p>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text">Checking backend...</span>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="card">
+            <h2><span class="icon">📁</span> Upload Executable</h2>
+            <div class="file-drop-zone" id="file-drop-zone">
+                <div class="icon">⬆️</div>
+                <p id="file-label">Drop your .exe file here or <strong>click to browse</strong></p>
+                <input type="file" id="file-input" accept=".exe,.out,.bin,*" />
+            </div>
+
+            <div class="row">
+                <div>
+                    <label>Or enter absolute path to the executable</label>
+                    <input type="text" id="exe-path" placeholder="C:\path\to\run.exe" />
+                </div>
+            </div>
+
+            <div>
+                <label>Custom Inputs (one per line, optional — added to the 15 synthetic inputs)</label>
+                <textarea id="custom-inputs" rows="3"
+                    placeholder="Type extra test inputs here, one per line..."></textarea>
+            </div>
+
+            <div class="actions-row">
+                <button class="btn btn-primary" id="probe-btn" disabled>🔬 Probe Executable</button>
+                <button class="btn btn-secondary" id="clear-btn">🗑️ Clear</button>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="card hidden" id="results-card">
+            <h2><span class="icon">📊</span> Probed I/O Pairs <span id="pair-count" class="synthetic-tag"></span></h2>
+            <div style="max-height: 350px; overflow-y: auto;">
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Input</th>
+                            <th>Output</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-body"></tbody>
+                </table>
+            </div>
+            <div class="actions-row">
+                <button class="btn btn-primary" id="solve-btn">⚡ Solve Logic</button>
+                <button class="btn btn-secondary" id="copy-pairs-btn">📋 Copy Pairs JSON</button>
+            </div>
+        </div>
+
+        <!-- Solution Section -->
+        <div class="card hidden" id="solution-card">
+            <h2><span class="icon">🧠</span> Solution</h2>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+                <div class="logic-badge" id="logic-text">—</div>
+                <span class="method-badge" id="method-badge">—</span>
+            </div>
+
+            <label>Python Code</label>
+            <div class="solution-box" style="margin-bottom:16px;">
+                <pre id="python-code">—</pre>
+            </div>
+            <div class="actions-row" style="margin-top:8px;margin-bottom:20px;">
+                <button class="btn btn-secondary copy-btn" onclick="copyText('python-code')">📋 Copy Python</button>
+                <button class="btn btn-primary" id="translate-btn">🔄 Translate to C++</button>
+            </div>
+
+            <div class="hidden" id="cpp-section">
+                <label>C++ Code</label>
+                <div class="solution-box">
+                    <pre id="cpp-code">—</pre>
+                </div>
+                <div class="actions-row" style="margin-top:8px;">
+                    <button class="btn btn-secondary copy-btn" onclick="copyText('cpp-code')">📋 Copy C++</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Log -->
+        <div class="card">
+            <h2><span class="icon">📜</span> Activity Log</h2>
+            <div class="log-area" id="log-area"></div>
+        </div>
+    </div>
+
+    <script>
+        const BACKEND_URL = 'http://localhost:8000';
+        let uploadedFile = null;
+        let probedPairs = [];
+
+        // ─── Status Check ─────────────────────────────────────────────────
+        async function checkStatus() {
+            try {
+                const resp = await fetch(`${BACKEND_URL}/`);
+                const data = await resp.json();
+                document.getElementById('status-dot').className = 'status-dot online';
+                document.getElementById('status-text').textContent =
+                    `Backend online — ${data.model || 'AI'} ${data.ai === 'connected' ? '✅' : '⚠️ no key'}`;
+                log('Backend connected', 'success');
+            } catch {
+                document.getElementById('status-dot').className = 'status-dot offline';
+                document.getElementById('status-text').textContent = 'Backend offline — start server.py';
+                log('Backend offline', 'error');
+            }
+        }
+        checkStatus();
+
+        // ─── File Upload ──────────────────────────────────────────────────
+        const dropZone = document.getElementById('file-drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const exePathInput = document.getElementById('exe-path');
+        const probeBtn = document.getElementById('probe-btn');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) handleFile(fileInput.files[0]);
+        });
+
+        function updateProbeBtn() {
+            probeBtn.disabled = !exePathInput.value.trim();
+        }
+
+        exePathInput.addEventListener('input', updateProbeBtn);
+
+        function handleFile(file) {
+            uploadedFile = file;
+            document.getElementById('file-label').innerHTML = `Selected: <span class="filename">${file.name}</span> (${(file.size / 1024).toFixed(1)} KB)`;
+
+            // Auto-guess common download paths
+            const guessedPath = `C:\\Users\\anand\\Downloads\\${file.name}`;
+            if (!exePathInput.value.trim()) {
+                exePathInput.value = guessedPath;
+                log(`Auto-filled path: ${guessedPath} — edit if incorrect`, 'info');
+            } else {
+                log(`File selected: ${file.name}`, 'info');
+            }
+            updateProbeBtn();
+        }
+
+        // ─── Probe ────────────────────────────────────────────────────────
+        probeBtn.addEventListener('click', async () => {
+            // Strip surrounding quotes the user might paste
+            const exePath = exePathInput.value.trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '');
+            if (!exePath) return;
+
+            probeBtn.disabled = true;
+            probeBtn.textContent = '⏳ Probing...';
+            log(`Probing: ${exePath}`, 'info');
+
+            const customInputs = document.getElementById('custom-inputs').value
+                .split('\n')
+                .map(l => l.trim())
+                .filter(l => l.length > 0);
+
+            try {
+                const resp = await fetch(`${BACKEND_URL}/probe`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        executable_path: exePath,
+                        custom_inputs: customInputs.length > 0 ? customInputs : null,
+                    }),
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+                    log(`Probe failed: ${err.detail}`, 'error');
+                    probeBtn.disabled = false;
+                    probeBtn.textContent = '🔬 Probe Executable';
+                    return;
+                }
+
+                const data = await resp.json();
+                probedPairs = data.pairs;
+
+                log(`Probed ${data.successful_pairs}/${data.total_inputs} inputs successfully`, 'success');
+                displayPairs(probedPairs);
+
+                // Auto-trigger solve after probing
+                if (probedPairs.length >= 1) {
+                    log('Auto-triggering solver with probed data...', 'info');
+                    document.getElementById('solve-btn').click();
+                }
+            } catch (e) {
+                log(`Error: ${e.message}`, 'error');
+            }
+
+            probeBtn.disabled = false;
+            probeBtn.textContent = '🔬 Probe Executable';
+        });
+
+        // ─── Display Pairs ────────────────────────────────────────────────
+        function displayPairs(pairs) {
+            const card = document.getElementById('results-card');
+            card.classList.remove('hidden');
+            document.getElementById('pair-count').textContent = `${pairs.length} pairs`;
+
+            const tbody = document.getElementById('results-body');
+            tbody.innerHTML = '';
+            pairs.forEach((p, i) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+          <td class="pair-num">${i + 1}</td>
+          <td>${escapeHtml(p.input)}</td>
+          <td>${escapeHtml(p.output)}</td>
+        `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // ─── Solve ────────────────────────────────────────────────────────
+        document.getElementById('solve-btn').addEventListener('click', async () => {
+            if (probedPairs.length < 1) {
+                log('Need at least 1 I/O pair', 'error');
+                return;
+            }
+
+            const solveBtn = document.getElementById('solve-btn');
+            solveBtn.disabled = true;
+            solveBtn.textContent = '⏳ Solving...';
+            log('Sending to solver pipeline...', 'info');
+
+            try {
+                const resp = await fetch(`${BACKEND_URL}/solve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pairs: probedPairs }),
+                    signal: AbortSignal.timeout(300000),
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+                    log(`Solver failed: ${err.detail}`, 'error');
+                    solveBtn.disabled = false;
+                    solveBtn.textContent = '⚡ Solve Logic';
+                    return;
+                }
+
+                const data = await resp.json();
+                log(`Solved via ${data.method} in ${data.attempts} attempt(s)`, 'success');
+                displaySolution(data);
+            } catch (e) {
+                log(`Error: ${e.message}`, 'error');
+            }
+
+            solveBtn.disabled = false;
+            solveBtn.textContent = '⚡ Solve Logic';
+        });
+
+        // ─── Display Solution ─────────────────────────────────────────────
+        function displaySolution(data) {
+            const card = document.getElementById('solution-card');
+            card.classList.remove('hidden');
+
+            document.getElementById('logic-text').textContent = data.logic;
+            document.getElementById('python-code').textContent = data.python_code;
+
+            const badge = document.getElementById('method-badge');
+            badge.textContent = data.method;
+            badge.className = `method-badge ${data.method}`;
+        }
+
+        // ─── Translate to C++ ─────────────────────────────────────────────
+        document.getElementById('translate-btn').addEventListener('click', async () => {
+            const pythonCode = document.getElementById('python-code').textContent;
+            if (!pythonCode || pythonCode === '—') return;
+
+            const btn = document.getElementById('translate-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Translating...';
+            log('Translating to C++...', 'info');
+
+            try {
+                const resp = await fetch(`${BACKEND_URL}/translate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ python_code: pythonCode }),
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+                    log(`Translation failed: ${err.detail}`, 'error');
+                    btn.disabled = false;
+                    btn.textContent = '🔄 Translate to C++';
+                    return;
+                }
+
+                const data = await resp.json();
+                document.getElementById('cpp-code').textContent = data.cpp_code;
+                document.getElementById('cpp-section').classList.remove('hidden');
+                log('C++ translation complete ✅', 'success');
+            } catch (e) {
+                log(`Error: ${e.message}`, 'error');
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🔄 Translate to C++';
+        });
+
+        // ─── Copy Pairs JSON ──────────────────────────────────────────────
+        document.getElementById('copy-pairs-btn').addEventListener('click', () => {
+            const json = JSON.stringify(probedPairs, null, 2);
+            navigator.clipboard.writeText(json);
+            log('Pairs JSON copied to clipboard — paste into extension Bulk Upload', 'success');
+        });
+
+        // ─── Clear ────────────────────────────────────────────────────────
+        document.getElementById('clear-btn').addEventListener('click', () => {
+            uploadedFile = null;
+            exePathInput.value = '';
+            document.getElementById('custom-inputs').value = '';
+            document.getElementById('file-label').innerHTML = 'Drop your .exe file here or <strong>click to browse</strong>';
+            document.getElementById('results-card').classList.add('hidden');
+            document.getElementById('solution-card').classList.add('hidden');
+            document.getElementById('cpp-section').classList.add('hidden');
+            probeBtn.disabled = true;
+            probedPairs = [];
+            log('Cleared all data', 'info');
+        });
+
+        // ─── Utilities ────────────────────────────────────────────────────
+        function copyText(elementId) {
+            const text = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(text);
+            log('Copied to clipboard', 'success');
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function log(message, level = 'info') {
+            const area = document.getElementById('log-area');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${level}`;
+            const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            entry.textContent = `[${time}] ${message}`;
+            area.appendChild(entry);
+            area.scrollTop = area.scrollHeight;
+        }
+    </script>
+</body>
+
+</html>

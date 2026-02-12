@@ -1,0 +1,408 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   RC-Oracle — Debug Overlay Styles
+   Dark-themed glassmorphism HUD
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --rc-bg: rgba(13, 13, 20, 0.92);
+  --rc-glass: rgba(30, 30, 50, 0.6);
+  --rc-border: rgba(100, 100, 180, 0.25);
+  --rc-accent: #7c5cff;
+  --rc-accent-glow: rgba(124, 92, 255, 0.4);
+  --rc-success: #00e99e;
+  --rc-error: #ff4a6e;
+  --rc-warn: #ffb84d;
+  --rc-text: #e8e6f0;
+  --rc-text-dim: #8a88a0;
+  --rc-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --rc-sans: 'Inter', -apple-system, sans-serif;
+  --rc-radius: 12px;
+}
+
+/* ─── Main Panel ────────────────────────────────────────────────────────── */
+
+#rc-oracle-overlay {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 380px;
+  max-height: 85vh;
+  background: var(--rc-bg);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  box-shadow:
+    0 0 0 1px rgba(124, 92, 255, 0.08),
+    0 8px 40px rgba(0, 0, 0, 0.55),
+    0 0 80px rgba(124, 92, 255, 0.06);
+  z-index: 2147483647;
+  font-family: var(--rc-sans);
+  color: var(--rc-text);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: box-shadow 0.3s ease;
+  user-select: none;
+}
+
+#rc-oracle-overlay:hover {
+  box-shadow:
+    0 0 0 1px rgba(124, 92, 255, 0.15),
+    0 12px 50px rgba(0, 0, 0, 0.6),
+    0 0 100px rgba(124, 92, 255, 0.1);
+}
+
+/* ─── Drag Handle / Header ──────────────────────────────────────────────── */
+
+#rc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: grab;
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.12), rgba(60, 60, 100, 0.15));
+  border-bottom: 1px solid var(--rc-border);
+}
+
+#rc-header:active {
+  cursor: grabbing;
+}
+
+#rc-header .rc-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+#rc-header .rc-title .rc-logo {
+  font-size: 16px;
+}
+
+#rc-header .rc-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--rc-success);
+  box-shadow: 0 0 8px var(--rc-success);
+  animation: rc-pulse 2s ease-in-out infinite;
+}
+
+#rc-header .rc-status-dot.disconnected {
+  background: var(--rc-error);
+  box-shadow: 0 0 8px var(--rc-error);
+}
+
+@keyframes rc-pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
+#rc-minimize-btn {
+  background: none;
+  border: none;
+  color: var(--rc-text-dim);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+#rc-minimize-btn:hover {
+  color: var(--rc-text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ─── Body ──────────────────────────────────────────────────────────────── */
+
+#rc-body {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+#rc-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+#rc-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#rc-body::-webkit-scrollbar-thumb {
+  background: var(--rc-border);
+  border-radius: 2px;
+}
+
+/* ─── Logic Display ──────────────────────────────────────────────────────── */
+
+#rc-logic-section {
+  background: var(--rc-glass);
+  border: 1px solid var(--rc-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+#rc-logic-section .rc-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--rc-accent);
+  margin-bottom: 8px;
+}
+
+#rc-logic-display {
+  font-family: var(--rc-mono);
+  font-size: 13px;
+  color: var(--rc-success);
+  line-height: 1.5;
+  word-break: break-word;
+  min-height: 20px;
+}
+
+/* ─── Action Buttons ─────────────────────────────────────────────────────── */
+
+#rc-examine-btn {
+  width: 100%;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, var(--rc-accent), #5a3fd4);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-family: var(--rc-sans);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+  letter-spacing: 0.3px;
+}
+
+#rc-examine-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px var(--rc-accent-glow);
+}
+
+#rc-examine-btn:active {
+  transform: translateY(0);
+}
+
+#rc-examine-btn.loading {
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+#rc-examine-btn.loading::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.15),
+      transparent);
+  animation: rc-shimmer 1.5s infinite;
+}
+
+@keyframes rc-shimmer {
+  100% {
+    left: 100%;
+  }
+}
+
+/* ─── Bulk Upload ────────────────────────────────────────────────────────── */
+
+#rc-bulk-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#rc-bulk-section .rc-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--rc-text-dim);
+}
+
+#rc-bulk-textarea {
+  width: 100%;
+  height: 72px;
+  background: var(--rc-glass);
+  border: 1px solid var(--rc-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--rc-text);
+  font-family: var(--rc-mono);
+  font-size: 11px;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+#rc-bulk-textarea:focus {
+  border-color: var(--rc-accent);
+}
+
+#rc-bulk-textarea::placeholder {
+  color: var(--rc-text-dim);
+  font-style: italic;
+}
+
+#rc-bulk-upload-btn {
+  padding: 8px 14px;
+  background: rgba(124, 92, 255, 0.15);
+  border: 1px solid var(--rc-border);
+  border-radius: 6px;
+  color: var(--rc-accent);
+  font-family: var(--rc-sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  align-self: flex-end;
+}
+
+#rc-bulk-upload-btn:hover {
+  background: rgba(124, 92, 255, 0.25);
+  border-color: var(--rc-accent);
+}
+
+/* ─── Status Log ─────────────────────────────────────────────────────────── */
+
+#rc-log-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#rc-log-section .rc-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--rc-text-dim);
+}
+
+#rc-log {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(60, 60, 80, 0.3);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: var(--rc-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  max-height: 150px;
+  overflow-y: auto;
+  color: var(--rc-text-dim);
+}
+
+#rc-log::-webkit-scrollbar {
+  width: 3px;
+}
+
+#rc-log::-webkit-scrollbar-thumb {
+  background: var(--rc-border);
+  border-radius: 2px;
+}
+
+#rc-log .log-entry {
+  margin-bottom: 4px;
+}
+
+#rc-log .log-entry.success {
+  color: var(--rc-success);
+}
+
+#rc-log .log-entry.error {
+  color: var(--rc-error);
+}
+
+#rc-log .log-entry.warn {
+  color: var(--rc-warn);
+}
+
+#rc-log .log-entry.info {
+  color: var(--rc-accent);
+}
+
+/* ─── Language Toggle ────────────────────────────────────────────────────── */
+
+#rc-lang-section .rc-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--rc-text-dim);
+  margin-bottom: 6px;
+}
+
+#rc-lang-toggle {
+  display: flex;
+  gap: 6px;
+}
+
+.rc-lang-btn {
+  flex: 1;
+  padding: 6px 12px;
+  background: var(--rc-glass);
+  border: 1px solid var(--rc-border);
+  border-radius: 6px;
+  color: var(--rc-text-dim);
+  font-family: var(--rc-mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.rc-lang-btn:hover {
+  border-color: var(--rc-accent);
+  color: var(--rc-text);
+}
+
+.rc-lang-btn.active {
+  background: rgba(124, 92, 255, 0.2);
+  border-color: var(--rc-accent);
+  color: var(--rc-accent);
+  box-shadow: 0 0 8px var(--rc-accent-glow);
+}
+
+/* ─── Minimized State ────────────────────────────────────────────────────── */
+
+#rc-oracle-overlay.minimized #rc-body {
+  display: none;
+}
+
+#rc-oracle-overlay.minimized {
+  max-height: none;
+  width: auto;
+  min-width: 180px;
+}

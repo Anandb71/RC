@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RC-Oracle</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 280px;
+      background: #0d0d14;
+      color: #e8e6f0;
+      font-family: 'Inter', sans-serif;
+      padding: 20px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .header .logo { font-size: 22px; }
+
+    .header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #7c5cff, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(30, 30, 50, 0.6);
+      border: 1px solid rgba(100, 100, 180, 0.2);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+    }
+
+    .status-label {
+      font-size: 12px;
+      color: #8a88a0;
+    }
+
+    .status-value {
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .dot.online {
+      background: #00e99e;
+      box-shadow: 0 0 6px #00e99e;
+    }
+
+    .dot.offline {
+      background: #ff4a6e;
+      box-shadow: 0 0 6px #ff4a6e;
+    }
+
+    .url-field {
+      margin-top: 4px;
+    }
+
+    .url-field label {
+      display: block;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #8a88a0;
+      margin-bottom: 6px;
+    }
+
+    .url-field input {
+      width: 100%;
+      background: rgba(30, 30, 50, 0.6);
+      border: 1px solid rgba(100, 100, 180, 0.2);
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: #e8e6f0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .url-field input:focus {
+      border-color: #7c5cff;
+    }
+
+    .footer {
+      margin-top: 16px;
+      text-align: center;
+      font-size: 10px;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="logo">⚡</span>
+    <h1>RC-Oracle</h1>
+  </div>
+
+  <div class="status-row">
+    <span class="status-label">Backend</span>
+    <span class="status-value">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">Checking...</span>
+    </span>
+  </div>
+
+  <div class="status-row">
+    <span class="status-label">Gemini</span>
+    <span class="status-value">
+      <span class="dot" id="gemini-dot"></span>
+      <span id="gemini-text">—</span>
+    </span>
+  </div>
+
+  <div class="url-field">
+    <label>Backend URL</label>
+    <input type="text" id="backend-url" value="http://localhost:8000" />
+  </div>
+
+  <div class="footer">RC-Oracle v1.0.0</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

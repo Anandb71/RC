@@ -1,0 +1,30 @@
+﻿
+ΓòÉΓòÉΓòÉ 1. Health Check ΓòÉΓòÉΓòÉ
+  Γ£à Backend online + Groq connected: status=online, ai=connected, model=llama-3.3-70b-versatile
+
+ΓòÉΓòÉΓòÉ 2. Symbolic Solver Tests ΓòÉΓòÉΓòÉ
+  Γ£à Identity (echo): method=symbolic, logic=y = x
+  Γ¥î Constant output: 
+  Γ£à String reverse: method=symbolic, logic=reverse the string
+  Γ£à String length: method=symbolic, logic=y = length of input string
+
+ΓòÉΓòÉΓòÉ 3. AI Solver Tests ΓòÉΓòÉΓòÉ
+  Γ£à n*2+1 pattern: method=symbolic, logic=y = 2 * x + 1, attempts=0
+  Γ£à n^2 pattern: method=symbolic, logic=y = x┬▓, attempts=0
+  Γ£à Factorial: method=symbolic, logic=y = x!, attempts=0
+  Γ£à Sum of array (multi-line): method=groq, logic=The code calculates the sum of a list of numbers, represented as ╬úx, where x is each number in the list., attempts=1
+  Γ£à Max of array (multi-line): method=groq, logic=The code logic is: `max(nums)`., attempts=1
+  Γ£à Fibonacci: method=groq, logic=The code calculates the nth Fibonacci number using the recurrence relation: F(n) = F(n-1) + F(n-2), where F(1) = F(2) = 1., attempts=1
+  Γ£à Count digits: method=symbolic, logic=y = length of input string, attempts=0
+
+ΓòÉΓòÉΓòÉ 4. C++ Translation Test ΓòÉΓòÉΓòÉ
+  Γ£à Python->C++ translation: C++ generated, length=162
+
+ΓòÉΓòÉΓòÉ 5. Edge Cases ΓòÉΓòÉΓòÉ
+  Γ£à Single pair (no crash): status=200
+  Γ£à Empty pairs rejected: Correctly rejected with 400
+
+==================================================
+  Results: 14/15 passed, 1 failed
+==================================================
+
