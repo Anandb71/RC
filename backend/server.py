@@ -7,7 +7,7 @@ Generates C++ code natively — no translation step.
 import os
 import re
 import sys
-import json
+
 import math
 import base64
 import subprocess
@@ -347,6 +347,76 @@ def try_encoding_transforms(pairs: list[dict]) -> Optional[dict]:
     return None
 
 
+def try_array_aggregates(pairs: list[dict]) -> Optional[dict]:
+    """Check for sum, product, min, max of array inputs."""
+    parsed_pairs = []
+    for p in pairs:
+        try:
+            # Handle "N \n a b c..." or just "a b c..."
+            parts = p["input"].split()
+            nums = [int(x) for x in parts if x.lstrip("-").isdigit()]
+            # If first number is count N and len(rest) == N, verify constraint
+            if len(nums) > 1 and nums[0] == len(nums) - 1:
+                nums = nums[1:]
+            
+            if not nums: continue
+            
+            # Parsing output
+            out_val = int(p["output"].strip())
+            parsed_pairs.append((nums, out_val))
+        except:
+            continue
+            
+    if not parsed_pairs or len(parsed_pairs) < len(pairs) * 0.8:
+        return None
+
+    # Sum
+    if all(sum(nums) == out for nums, out in parsed_pairs):
+        return {"type": "sum", "logic": "sum of all numbers",
+            "code": make_cpp('    long long n; cin >> n;\n    long long sum = 0, x;\n    while(n--) { cin >> x; sum += x; }\n    cout << sum << endl;')}
+    
+    # Min
+    if all(min(nums) == out for nums, out in parsed_pairs):
+        return {"type": "min", "logic": "minimum of all numbers",
+            "code": make_cpp('    long long n; cin >> n;\n    long long min_val = 1e18, x;\n    while(n--) { cin >> x; if(x < min_val) min_val = x; }\n    cout << min_val << endl;')}
+
+    # Max
+    if all(max(nums) == out for nums, out in parsed_pairs):
+        return {"type": "max", "logic": "maximum of all numbers",
+            "code": make_cpp('    long long n; cin >> n;\n    long long max_val = -1e18, x;\n    while(n--) { cin >> x; if(x > max_val) max_val = x; }\n    cout << max_val << endl;')}
+            
+    return None
+
+
+def try_number_theory(pairs: list[dict]) -> Optional[dict]:
+    """Check for GCD, LCM, Modulo of 2 numbers."""
+    parsed_pairs = []
+    for p in pairs:
+        try:
+            parts = p["input"].split()
+            nums = [int(x) for x in parts if x.lstrip("-").isdigit()]
+            if len(nums) != 2: continue
+            out_val = int(p["output"].strip())
+            parsed_pairs.append((nums[0], nums[1], out_val))
+        except:
+            continue
+            
+    if not parsed_pairs or len(parsed_pairs) < len(pairs):
+        return None
+        
+    # GCD
+    if all(math.gcd(a, b) == out for a, b, out in parsed_pairs):
+         return {"type": "gcd", "logic": "GCD of a and b",
+            "code": make_cpp('    long long a, b; cin >> a >> b;\n    cout << std::gcd(a, b) << endl;')}
+            
+    # Modulo
+    if all(b != 0 and a % b == out for a, b, out in parsed_pairs):
+         return {"type": "modulo", "logic": "a % b",
+            "code": make_cpp('    long long a, b; cin >> a >> b;\n    cout << a % b << endl;')}
+            
+    return None
+
+
 def symbolic_solve(pairs: list[dict]) -> Optional[dict]:
     """Run all symbolic heuristic checks. Returns match or None."""
     result = try_numeric_pairs(pairs)
@@ -358,6 +428,14 @@ def symbolic_solve(pairs: list[dict]) -> Optional[dict]:
         return result
 
     result = try_encoding_transforms(pairs)
+    if result:
+        return result
+
+    result = try_array_aggregates(pairs)
+    if result:
+        return result
+
+    result = try_number_theory(pairs)
     if result:
         return result
 
