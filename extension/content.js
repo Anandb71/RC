@@ -840,15 +840,39 @@
 
             log(`Total: ${pairs.length} I/O pair(s) ready`, 'success');
 
+            // Step 2.5: Read boilerplate template from editor
+            let boilerplate = null;
+            try {
+                boilerplate = await readEditorCode();
+                if (boilerplate && boilerplate.trim()) {
+                    log(`Read boilerplate template (${boilerplate.length} chars)`, 'info');
+                } else {
+                    boilerplate = null;
+                    log('No boilerplate template found — standalone mode', 'info');
+                }
+            } catch {
+                log('Could not read editor template', 'warn');
+            }
+
+            // Also scrape description for context
+            const descData = scrapeDescription();
+            const descText = descData.description || '';
+            const constraintsText = descData.constraints || '';
+            const fullDescription = [descText, constraintsText].filter(Boolean).join('\n\nConstraints:\n');
+
             // Step 3: Send to solver
             btn.textContent = '🧠 Solving...';
             log('Sending to solver pipeline...', 'info');
             let solveResp;
             try {
+                const solveBody = { pairs };
+                if (boilerplate) solveBody.boilerplate = boilerplate;
+                if (fullDescription.trim()) solveBody.description = fullDescription;
+
                 solveResp = await fetch(`${BACKEND_URL}/solve`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pairs }),
+                    body: JSON.stringify(solveBody),
                     signal: AbortSignal.timeout(300000), // 5 min for 20 retries
                 });
             } catch (fetchErr) {
@@ -973,7 +997,33 @@
         document.getElementById('rc-examine-btn').click();
     }
 
-    // ─── Monaco Code Injection ────────────────────────────────────────────────
+    // ─── Editor Code Reading & Injection ─────────────────────────────────────
+
+    /**
+     * Read current code from the editor (boilerplate template).
+     * Returns a promise that resolves with the code string or null.
+     */
+    function readEditorCode() {
+        return new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+                window.removeEventListener('message', handler);
+                resolve(null);
+            }, 3000);
+
+            function handler(event) {
+                if (event.source !== window) return;
+                const msg = event.data;
+                if (msg && msg.source === 'rc-oracle-injector' && msg.action === 'codeResult') {
+                    clearTimeout(timeout);
+                    window.removeEventListener('message', handler);
+                    resolve(msg.code || null);
+                }
+            }
+
+            window.addEventListener('message', handler);
+            window.postMessage({ source: 'rc-oracle-content', action: 'getCode' }, '*');
+        });
+    }
 
     function injectCode(code) {
         window.postMessage({

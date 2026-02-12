@@ -63,6 +63,8 @@ class IOPair(BaseModel):
 
 class SolveRequest(BaseModel):
     pairs: list[IOPair]
+    boilerplate: Optional[str] = None   # Editor template from portal
+    description: Optional[str] = None   # Problem description text
 
 # ─── Synthetic Input Generator ──────────────────────────────────────────────
 # Competitive programming problems typically expect:
@@ -433,7 +435,8 @@ def extract_cpp_code(response_text: str) -> str:
     # Validate it's actually C++
     if "def solve" in code or "def " in code:
         raise ValueError("AI returned Python instead of C++")
-    if "#include" not in code and "int main" not in code:
+    cpp_markers = ["#include", "int main", "void solve", "cin", "cout", "iostream"]
+    if not any(m in code for m in cpp_markers):
         raise ValueError("Response does not contain valid C++ code")
 
     # Clean up: remove any text before #include
@@ -531,7 +534,7 @@ def score_cpp_solution(code: str, pairs: list[dict]) -> int:
     return matched
 
 
-async def ai_solve(pairs: list[dict], max_retries: int = 20) -> dict:
+async def ai_solve(pairs: list[dict], boilerplate: Optional[str] = None, description: Optional[str] = None, max_retries: int = 20) -> dict:
     """Agentic loop: ask AI for C++ code, compile, run, verify, retry on failure.
     Tracks the best-scoring attempt so even on total failure we return closest solution."""
     if not oai_client:
@@ -540,12 +543,30 @@ async def ai_solve(pairs: list[dict], max_retries: int = 20) -> dict:
     ai_pairs = select_best_pairs(pairs, max_pairs=15)
 
     pair_text = "\n".join(f"  Input: {p['input']!r}  →  Output: {p['output']!r}" for p in ai_pairs)
-    user_prompt = (
-        f"Here are {len(ai_pairs)} input-output pairs from a black-box program:\n{pair_text}\n\n"
-        f"Note: inputs may be multi-line (e.g., first line = N, second line = N numbers).\n"
-        f"Analyze the pattern carefully and write a COMPLETE C++ program.\n"
-        f"REMEMBER: C++ ONLY. Use #include <bits/stdc++.h>, void solve(), read cin, write cout."
-    )
+
+    # Build user prompt with optional boilerplate and description
+    user_prompt_parts = [f"Here are {len(ai_pairs)} input-output pairs from a black-box program:\n{pair_text}\n"]
+
+    if description:
+        user_prompt_parts.append(f"\nPROBLEM DESCRIPTION from the portal:\n{description}\n")
+
+    if boilerplate and boilerplate.strip():
+        user_prompt_parts.append(
+            f"\nIMPORTANT — The portal provides this BOILERPLATE TEMPLATE that you MUST use:\n"
+            f"```cpp\n{boilerplate}\n```\n"
+            f"You MUST keep the template structure intact. Fill in the logic inside the template.\n"
+            f"Do NOT add extra #include lines if they are already in the template.\n"
+            f"Do NOT change main() if it's already defined in the template.\n"
+            f"ONLY add your solution logic where the template expects it (comments like '// write your code here', empty function bodies, etc.)."
+        )
+    else:
+        user_prompt_parts.append(
+            "\nNo template provided. Write a COMPLETE standalone C++ program.\n"
+            "Use #include <bits/stdc++.h>, void solve(), read cin, write cout."
+        )
+
+    user_prompt_parts.append("\nAnalyze the pattern carefully. REMEMBER: C++ ONLY. NEVER use Python.")
+    user_prompt = "\n".join(user_prompt_parts)
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -710,7 +731,7 @@ async def solve(req: SolveRequest):
             }
 
     # Step 2: AI Agentic Synthesis — C++ native (20 retries, best-effort fallback)
-    result = await ai_solve(pairs)
+    result = await ai_solve(pairs, boilerplate=req.boilerplate, description=req.description)
 
     if result["status"] in ("solved", "best_effort"):
         # Derive logic description
