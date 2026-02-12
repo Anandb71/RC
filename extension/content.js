@@ -57,21 +57,182 @@
     injectMainWorldScript();
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // DYNAMIC ELEMENT DISCOVERY — Heuristic-scored, survives any UI changes
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Find a textarea by scoring ALL textareas on the page using multiple signals.
+     * @param {'input'|'output'} role - What role to look for
+     * @returns {HTMLTextAreaElement|null}
+     */
+    function findTextarea(role) {
+        const textareas = Array.from(document.querySelectorAll('textarea'));
+        if (textareas.length === 0) return null;
+
+        const inputKeywords = ['input', 'stdin', 'custom-input', 'enter', 'type here', 'your input'];
+        const outputKeywords = ['output', 'stdout', 'custom-output', 'result', 'answer', 'output here'];
+        const keywords = role === 'input' ? inputKeywords : outputKeywords;
+
+        let best = null;
+        let bestScore = -1;
+
+        for (const ta of textareas) {
+            // Skip our own overlay textareas
+            if (ta.closest('#rc-oracle-overlay')) continue;
+            let score = 0;
+
+            // Signal 1: placeholder text
+            const ph = (ta.placeholder || '').toLowerCase();
+            for (const kw of keywords) { if (ph.includes(kw)) score += 10; }
+
+            // Signal 2: name attribute
+            const name = (ta.name || '').toLowerCase();
+            for (const kw of keywords) { if (name.includes(kw)) score += 10; }
+
+            // Signal 3: id attribute
+            const id = (ta.id || '').toLowerCase();
+            for (const kw of keywords) { if (id.includes(kw)) score += 10; }
+
+            // Signal 4: aria-label
+            const aria = (ta.getAttribute('aria-label') || '').toLowerCase();
+            for (const kw of keywords) { if (aria.includes(kw)) score += 8; }
+
+            // Signal 5: class names
+            const cls = (ta.className || '').toLowerCase();
+            for (const kw of keywords) { if (cls.includes(kw)) score += 5; }
+
+            // Signal 6: nearest label text
+            const labelEl = ta.closest('label') || (ta.id && document.querySelector(`label[for="${ta.id}"]`));
+            if (labelEl) {
+                const labelText = labelEl.textContent.toLowerCase();
+                for (const kw of keywords) { if (labelText.includes(kw)) score += 8; }
+            }
+
+            // Signal 7: nearby sibling/parent text (within 2 levels up)
+            const container = ta.parentElement;
+            if (container) {
+                const containerText = container.textContent.toLowerCase().slice(0, 200);
+                for (const kw of keywords) { if (containerText.includes(kw)) score += 3; }
+                const grandParent = container.parentElement;
+                if (grandParent) {
+                    const gpText = grandParent.textContent.toLowerCase().slice(0, 300);
+                    for (const kw of keywords) { if (gpText.includes(kw)) score += 2; }
+                }
+            }
+
+            // Signal 8: data-* attributes
+            for (const attr of ta.attributes) {
+                if (attr.name.startsWith('data-')) {
+                    const val = attr.value.toLowerCase();
+                    for (const kw of keywords) { if (val.includes(kw)) score += 7; }
+                }
+            }
+
+            // Signal 9: readonly/disabled = more likely output
+            if (role === 'output' && (ta.readOnly || ta.disabled)) score += 5;
+            if (role === 'input' && !ta.readOnly && !ta.disabled) score += 3;
+
+            // Signal 10: visible and has reasonable size
+            const rect = ta.getBoundingClientRect();
+            if (rect.width > 50 && rect.height > 20) score += 2;
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = ta;
+            }
+        }
+
+        return best;
+    }
+
+    /**
+     * Find the Run/Execute button using heuristic scoring.
+     * @returns {HTMLButtonElement|null}
+     */
+    function findRunButton() {
+        const buttons = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"]'));
+        const runKeywords = ['run', 'execute', 'submit', 'compile', 'test'];
+        const excludeKeywords = ['login', 'signup', 'register', 'save', 'delete', 'logout', 'upload', 'download'];
+
+        let best = null;
+        let bestScore = -1;
+
+        for (const btn of buttons) {
+            // Skip our own buttons
+            if (btn.closest('#rc-oracle-overlay')) continue;
+            let score = 0;
+
+            const text = (btn.textContent || btn.value || '').trim().toLowerCase();
+
+            // Exact match is strongest
+            if (text === 'run' || text === 'run code') score += 20;
+            if (text === 'execute') score += 15;
+
+            // Partial match
+            for (const kw of runKeywords) { if (text.includes(kw)) score += 8; }
+
+            // Exclude unrelated buttons
+            for (const kw of excludeKeywords) { if (text.includes(kw)) score -= 20; }
+
+            // Check data-action, title, aria-label
+            const action = (btn.getAttribute('data-action') || '').toLowerCase();
+            const title = (btn.title || '').toLowerCase();
+            const ariaL = (btn.getAttribute('aria-label') || '').toLowerCase();
+            for (const attr of [action, title, ariaL]) {
+                for (const kw of runKeywords) { if (attr.includes(kw)) score += 10; }
+            }
+
+            // Class names
+            const cls = (btn.className || '').toLowerCase();
+            for (const kw of runKeywords) { if (cls.includes(kw)) score += 5; }
+
+            // Icon buttons: look for play icon (▶, ►) or SVG with play-like path
+            if (text.includes('▶') || text.includes('►')) score += 12;
+            if (btn.querySelector('svg')) {
+                const svgText = btn.innerHTML.toLowerCase();
+                if (svgText.includes('play') || svgText.includes('triangle')) score += 8;
+            }
+
+            // Proximity: is it near a textarea? (likely the terminal area)
+            const rect = btn.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+                score += 1; // visible
+                const nearbyTextarea = btn.closest('div, section, form')?.querySelector('textarea');
+                if (nearbyTextarea) score += 5;
+            }
+
+            // Green/primary colored buttons are more likely "run"
+            const style = getComputedStyle(btn);
+            const bg = style.backgroundColor;
+            if (bg.includes('0, 128') || bg.includes('76, 175') || bg.includes('40, 167') || bg.includes('success')) {
+                score += 3;
+            }
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = btn;
+            }
+        }
+
+        return best;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // STEALTH SCRAPER — Extract I/O from the portal page
     // ═══════════════════════════════════════════════════════════════════════════
 
     /**
      * Scrape I/O pairs from the current page.
-     * Tries multiple strategies, tuned for Yantra/INCRDECR-style portals.
+     * Fully dynamic — uses heuristic discovery, regex patterns, and table parsing.
      */
     function scrapeIOPairs() {
         const pairs = [];
 
-        // ─── Strategy 1: Portal-specific selectors ──────────────────────
-        // Look for custom-input / custom-output textareas
-        const customInput = document.querySelector('textarea[name="custom-input"]');
-        const customOutput = document.querySelector('textarea[name="custom-output"]');
-        if (customInput && customOutput && customInput.value.trim() && customOutput.value.trim()) {
+        // ─── Strategy 1: Heuristic textarea discovery ────────────────────
+        const customInput = findTextarea('input');
+        const customOutput = findTextarea('output');
+        if (customInput && customOutput && customInput !== customOutput &&
+            customInput.value.trim() && customOutput.value.trim()) {
             pairs.push({
                 input: customInput.value.trim(),
                 output: customOutput.value.trim(),
@@ -135,6 +296,51 @@
                     if (cells.length > Math.max(inputIdx, outputIdx)) {
                         const inp = cells[inputIdx].textContent.trim();
                         const out = cells[outputIdx].textContent.trim();
+                        if (inp && out) {
+                            const exists = pairs.some(p => p.input === inp && p.output === out);
+                            if (!exists) pairs.push({ input: inp, output: out });
+                        }
+                    }
+                }
+            }
+        }
+
+        // ─── Strategy 5: pre/code blocks with Input/Output labels ────────
+        if (pairs.length === 0) {
+            const preBlocks = document.querySelectorAll('pre, code');
+            const blockArray = Array.from(preBlocks);
+            for (let i = 0; i < blockArray.length - 1; i++) {
+                const el = blockArray[i];
+                const nextEl = blockArray[i + 1];
+                // Check if preceding text contains "Input" and next has "Output"
+                const prevText = el.previousSibling?.textContent?.trim() ||
+                    el.parentElement?.previousElementSibling?.textContent?.trim() || '';
+                const nextPrevText = nextEl.previousSibling?.textContent?.trim() ||
+                    nextEl.parentElement?.previousElementSibling?.textContent?.trim() || '';
+                if (/input/i.test(prevText) && /output/i.test(nextPrevText)) {
+                    const inp = el.textContent.trim();
+                    const out = nextEl.textContent.trim();
+                    if (inp && out) {
+                        const exists = pairs.some(p => p.input === inp && p.output === out);
+                        if (!exists) pairs.push({ input: inp, output: out });
+                    }
+                }
+            }
+        }
+
+        // ─── Strategy 6: Div-based I/O containers ────────────────────────
+        if (pairs.length === 0) {
+            const allDivs = document.querySelectorAll('div, section, article');
+            for (const div of allDivs) {
+                const heading = div.querySelector('h1, h2, h3, h4, h5, h6, strong, b, span');
+                if (!heading) continue;
+                const headText = heading.textContent.trim().toLowerCase();
+                if (headText.includes('sample') || headText.includes('example') || headText.includes('test case')) {
+                    const text = div.textContent;
+                    const ioMatch = text.match(/Input\s*:?\s*\n?([\s\S]*?)\s*Output\s*:?\s*\n?([\s\S]*?)(?:\n\s*(?:Explanation|Note|$))/i);
+                    if (ioMatch) {
+                        const inp = ioMatch[1].trim();
+                        const out = ioMatch[2].trim();
                         if (inp && out) {
                             const exists = pairs.some(p => p.input === inp && p.output === out);
                             if (!exists) pairs.push({ input: inp, output: out });
@@ -483,30 +689,18 @@
      * detects input format from examples, generates matching inputs within bounds.
      */
     async function probeOnSite(existingPairs) {
-        const customInput =
-            document.querySelector('textarea[name="custom-input"]') ||
-            document.querySelector('textarea[placeholder*="Enter Your Input"]') ||
-            document.querySelector('textarea[placeholder*="enter your input"]') ||
-            document.querySelector('textarea[placeholder*="Custom Input"]') ||
-            document.querySelector('textarea[placeholder*="Input"]');
-
-        const customOutput =
-            document.querySelector('textarea[name="custom-output"]') ||
-            document.querySelector('textarea[placeholder*="Output here"]') ||
-            document.querySelector('textarea[placeholder*="output here"]') ||
-            document.querySelector('textarea[placeholder*="Custom Output"]') ||
-            document.querySelector('textarea[placeholder*="Output"]');
-
-        const runBtn =
-            document.querySelector('button[data-action="run"]') ||
-            Array.from(document.querySelectorAll('button')).find(b => {
-                const txt = b.textContent.trim().toLowerCase();
-                return txt === 'run' || txt === 'run code' || txt === 'execute';
-            });
+        // Fully dynamic element discovery using heuristic scoring
+        const customInput = findTextarea('input');
+        const customOutput = findTextarea('output');
+        const runBtn = findRunButton();
 
         if (!customInput || !customOutput || !runBtn) {
             log('Terminal not found — cannot probe on-site', 'warn');
-            log(`  Input: ${!!customInput}, Output: ${!!customOutput}, RunBtn: ${!!runBtn}`, 'warn');
+            log(`  Found: Input=${!!customInput}, Output=${!!customOutput}, RunBtn=${!!runBtn}`, 'warn');
+            return existingPairs;
+        }
+        if (customInput === customOutput) {
+            log('Input and Output are the same element — cannot probe', 'warn');
             return existingPairs;
         }
 
