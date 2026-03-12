@@ -816,7 +816,7 @@ async def root():
     return {
         "service": "RC-Oracle",
         "version": "1.0.0",
-        "status": "online",
+        "status": "online" if oai_client is not None else "offline",
         "ai": "connected" if oai_client else "disconnected",
         "model": MODEL_NAME,
     }
